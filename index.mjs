@@ -101,6 +101,7 @@ function readState(cfg) {
       ? { url: String(raw.notify.url ?? cfg.notifyUrl ?? ''), token: String(raw.notify.token ?? cfg.notifyToken ?? '') }
       : { url: cfg.notifyUrl ?? '', token: cfg.notifyToken ?? '' },
     lastSync: raw.lastSync,
+    lastHeartbeatAt: raw.lastHeartbeatAt,
   };
 }
 
