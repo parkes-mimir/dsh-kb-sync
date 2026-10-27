@@ -172,6 +172,20 @@ sudo ./hub/install-hub.sh /home/mnemon/mnemon-sync.git
 
 ---
 
+## 插件页里的配置区（浏览器半侧）
+
+包内置 `lib/client.js`（lazy-CJS factory），注册到官方槽 `plugins.bundle.config`：
+
+```js
+ctx.slots.register({ name: 'plugins.bundle.config', key: 'dsh-kb-sync' }, ConfigPage)
+const scope = ctx.configForms.get('dsh-kb-sync')   // getSnapshot()/subscribe()/set()/unset()
+```
+
+效果：**设置 → 插件 → dsh-kb-sync** 页面里出现「知识库同步」配置区（服务器地址、设备名、兜底间隔、通知地址/token、空间策略 JSON、保存）。
+字段来自 Host 的插件 Config；保存走 `configForms`，即时生效，不需要重启。
+
+`dsh.client.inject` 需要 `@deepseek-ai/dsh-client-ui-plugin-manager`、`@deepseek-ai/dsh-client-ui-settings-plugins`、`@deepseek-ai/dsh-client-locale`。
+
 ## 设置表单（设置 → 插件 → dsh-kb-sync）
 
 插件导出 `Config`（`@deepseek-ai/schemastery`），DSH 会把带 `.volatile()` 的字段渲染成
