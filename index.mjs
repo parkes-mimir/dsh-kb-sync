@@ -14,12 +14,27 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, watch, writ
 import { homedir, hostname } from 'node:os';
 import { basename, join } from 'node:path';
 import { createRequire } from 'node:module';
-import { startUi } from './ui.mjs';
 import http from 'node:http';
 
 const require = createRequire(import.meta.url);
 
+import z from '@deepseek-ai/schemastery';
+
 export const name = 'kb-sync';
+
+// 这张 schema 就是「设置 → 插件 → dsh-kb-sync」里的那张表单：
+// 带 .volatile() 的字段可编辑，保存后写回 profile 里该条目的 config。
+export const Config = z.object({
+  remote: z.string().default('').description('共享知识库地址（ssh:// 或 https://）；留空 = 只在本机，不同步').volatile(),
+  device: z.string().default('').description('本机在仓库里的分片名；留空 = 用主机名').volatile(),
+  intervalMinutes: z.number().default(30).description('兜底对账间隔（分钟）；0 = 关闭，只靠事件触发').volatile(),
+  notifyUrl: z.string().default('').description('hub 通知服务地址（http://host:7392）；留空 = 不实时通知，只靠兜底').volatile(),
+  notifyToken: z.string().default('').description('hub 通知服务 token').volatile(),
+  spaces: z.dict(z.object({
+    mode: z.string().default('cloud').description('cloud = 双向同步；local = 只留本机'),
+    enabled: z.boolean().default(true).description('false = 暂停该空间的同步'),
+  })).default({}).description('每个记忆空间的策略；没列出的空间默认 cloud + 启用').volatile(),
+});
 export const inject = ['tools'];
 
 const DEFAULTS = {
@@ -34,9 +49,6 @@ const DEFAULTS = {
   promptOrder: 151,
   notifyUrl: '',
   notifyToken: '',
-  uiEnabled: true,
-  uiHost: '127.0.0.1',
-  uiPort: 7393,
   gitTimeoutMs: 180000,
 };
 
@@ -79,12 +91,12 @@ function readState(cfg) {
   const raw = (existsSync(file) ? safeJson(readFileSync(file, 'utf8')) : undefined) ?? {};
   return {
     version: 1,
-    remote: typeof raw.remote === 'string' ? raw.remote : cfg.remote,
+    remote: typeof raw.remote === 'string' && raw.remote ? raw.remote : (cfg.remote ?? ''),
     branch: typeof raw.branch === 'string' ? raw.branch : cfg.branch,
     device: typeof raw.device === 'string' ? raw.device : cfg.device,
     repoDir: typeof raw.repoDir === 'string' ? raw.repoDir : join(cfg.dataDir, 'state', 'kb-repo'),
-    intervalMinutes: Number.isFinite(raw.intervalMinutes) ? raw.intervalMinutes : cfg.intervalMinutes,
-    spaces: raw.spaces && typeof raw.spaces === 'object' ? raw.spaces : {},
+    intervalMinutes: Number.isFinite(raw.intervalMinutes) ? raw.intervalMinutes : (Number(cfg.intervalMinutes) || 30),
+    spaces: raw.spaces && Object.keys(raw.spaces).length > 0 ? raw.spaces : (cfg.spaces && typeof cfg.spaces === 'object' ? cfg.spaces : {}),
     notify: raw.notify && typeof raw.notify === 'object'
       ? { url: String(raw.notify.url ?? cfg.notifyUrl ?? ''), token: String(raw.notify.token ?? cfg.notifyToken ?? '') }
       : { url: cfg.notifyUrl ?? '', token: cfg.notifyToken ?? '' },
@@ -580,18 +592,8 @@ export function apply(ctx, config = {}) {
     notifyLoop().catch((error) => log('warn', 'notify loop died: ' + (error?.message ?? error)));
   } catch (error) { log('warn', 'event loop: ' + (error?.message ?? error)); }
 
-  // 本地可视化面板（127.0.0.1，可关）
-  let uiServer;
-  if (cfg.uiEnabled !== false) {
-    try {
-      uiServer = startUi({
-        cfg, readState, writeState, spacePolicy, listLocalSpaces, readLocalInsights, repoMarks, syncAll, log,
-      });
-    } catch (error) { log('warn', 'ui start: ' + (error?.message ?? error)); }
-  }
-
   try {
-    const cleanup = () => { stopped = true; clearTimeout(pushDebounce); clearInterval(fallback); try { fileWatcher?.close(); } catch {} try { uiServer?.close(); } catch {} };
+    const cleanup = () => { stopped = true; clearTimeout(pushDebounce); clearInterval(fallback); try { fileWatcher?.close(); } catch {} };
     if (typeof ctx.effect === 'function') ctx.effect(() => cleanup, 'kb-sync notify');
   } catch { /* ignore */ }
 }
