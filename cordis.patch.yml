@@ -1,0 +1,8 @@
+# dsh-kb-sync —— bundle patch
+# 作为 bundle 被 dsh 加载时，把插件行插进 profile；配置可直接改这里的默认值。
+- insert:
+    - id: kb-sync
+      name: dsh-kb-sync
+      config:
+        intervalMinutes: 30
+        device: dsh-kb-sync
