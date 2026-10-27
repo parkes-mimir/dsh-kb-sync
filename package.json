@@ -1,6 +1,6 @@
 {
   "name": "dsh-kb-sync",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Cross-device knowledge base sync for dsh-mnemon memory spaces (local/cloud per space, event-driven push, hook-driven notify)",
   "type": "module",
   "main": "index.mjs",
