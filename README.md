@@ -190,6 +190,18 @@ sudo ./hub/install-hub.sh /home/mnemon/mnemon-sync.git
 > 只有 `.volatile()` 字段可编辑。插件不导出 Config 时，设置页既看不到卡片，
 > `update()` 也会报 `No configurable plugin entry`。
 
+## 发版注意：两处版本必须一致
+
+插件有**两份**文件：仓库源码 + 已装到 `~/.dsh/plugins/dsh-kb-sync` 的那份。
+设置页显示的版本读的是**已安装那份**的 `package.json`，所以改版本号后必须同步：
+
+```bash
+./scripts/sync-to-profile.sh
+# repo=0.5.0 installed=0.5.0
+# config ok
+# 然后重启 dsh
+```
+
 ## 自检：插件在不在跑、同步没同步
 
 一条命令：
