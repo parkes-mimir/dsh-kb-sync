@@ -172,6 +172,24 @@ sudo ./hub/install-hub.sh /home/mnemon/mnemon-sync.git
 
 ---
 
+## 设置表单（设置 → 插件 → dsh-kb-sync）
+
+插件导出 `Config`（`@deepseek-ai/schemastery`），DSH 会把带 `.volatile()` 的字段渲染成
+「设置 → 插件 → dsh-kb-sync」里的表单，保存后写回 profile 该条目的 config：
+
+| 字段 | 含义 |
+|---|---|
+| `remote` | hub 地址（ssh:// 或 https://），留空 = 只本机 |
+| `device` | 仓库分片名，留空 = 主机名 |
+| `intervalMinutes` | 兜底对账间隔，0 = 关闭 |
+| `notifyUrl` / `notifyToken` | hub 通知服务，留空 = 不实时通知 |
+| `spaces` | 每空间策略 `{ mode: cloud|local, enabled: bool }`，未列出 = cloud + 启用 |
+
+> 为什么这样就够：DSH 0.1.7+ 把设置命名空间换成了 SettingsForms——
+> `describe()` 遍历 profile 条目，`entry.fiber.runtime.Config` 就是该条目的表单 schema，
+> 只有 `.volatile()` 字段可编辑。插件不导出 Config 时，设置页既看不到卡片，
+> `update()` 也会报 `No configurable plugin entry`。
+
 ## 自检：插件在不在跑、同步没同步
 
 一条命令：
