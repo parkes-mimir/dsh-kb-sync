@@ -1,0 +1,16 @@
+[Unit]
+Description=Mnemon hub change notifier (hook-driven, event push)
+After=network-online.target
+
+[Service]
+Type=simple
+User=mnemon
+Group=mnemon
+ExecStart=/usr/bin/python3 /opt/kb-notify/kb-hub-notify.py --repo /home/mnemon/mnemon-sync.git --port 7392 --bind 0.0.0.0 --token-file /etc/kb-notify.token --header-token
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
