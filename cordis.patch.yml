@@ -1,21 +1,14 @@
 # dsh-kb-sync —— bundle patch
-# 所有设置都在这一块的 config 里（改完重启 dsh 生效）。
+# 行 id 必须与包名一致（设置页按包名匹配条目，才能渲染 Config 表单）
 - insert:
-    - id: kb-sync
+    - id: dsh-kb-sync
       name: dsh-kb-sync
       config:
-        # 服务器（hub）地址：ssh:// 或 https://，留空则只做本地、不同步
         remote: ''
-        # 本机在 hub 仓库里的分片名；留空 = 用主机名
         device: ''
-        # 兜底对账间隔（分钟）；事件链正常时不依赖它，设 0 关闭
-        intervalMinutes: 30
-        # 通知服务（hub 上的 kb-notify）：留空 = 不用推送通知，靠兜底
         notifyUrl: ''
         notifyToken: ''
-        # 每个记忆空间的策略；不写 = cloud + enabled
-        #   cloud: 双向同步；local: 只留本机，永不上传
-        #   enabled:false: 不拉不推，重新开启后补齐
-        spaces: {}
-        #   tt5g-kernel:  { mode: cloud, enabled: true }
-        #   private-notes: { mode: local }
+        # 默认哪些空间只留本机：h3c-career 含个人资料与简历，永不上云
+        spaces:
+          h3c-career:
+            mode: local
