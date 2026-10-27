@@ -9,7 +9,8 @@
     "hub/",
     "examples/",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "cordis.patch.yml"
   ],
   "keywords": [
     "dsh",
@@ -30,6 +31,9 @@
     "node": ">=22"
   },
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "plugin": true
   },
   "publishConfig": {
