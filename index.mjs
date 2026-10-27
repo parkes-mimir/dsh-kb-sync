@@ -8,7 +8,7 @@
 //   · 记忆空间分两种模式：cloud（默认，双向同步）/ local（只留在本机，绝不上传）。
 //   · 每个空间可单独 enable/disable；禁用的空间不拉不推，重新开启后从仓库补齐。
 //   · 写入落库后 ~30s 内自动推送（mtime 侦测 + 去抖），并定期全量同步一次。
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, watch, writeFileSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
@@ -301,6 +301,26 @@ async function exportSpace(cfg, state, space, marks, log) {
   return { space, exported: pending.length };
 }
 
+
+/** 每次同步后写 devices/<device>.json，供 hub 面板统计设备与最近同步。 */
+function writeHeartbeat(cfg, state, log) {
+  try {
+    const dir = join(state.repoDir, 'devices');
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    let head = '';
+    try { head = execFileSync('git', ['-C', state.repoDir, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch {}
+    const body = {
+      device: state.device,
+      host: hostname(),
+      lastSync: state.lastSync ?? nowIso(),
+      head,
+      platform: process.platform,
+      version: cfg.pluginVersion ?? '0.7.2',
+    };
+    writeFileSync(join(dir, state.device + '.json'), JSON.stringify(body, null, 2) + '\n', { mode: 0o600 });
+  } catch (error) { log?.('warn', 'heartbeat: ' + (error?.message ?? error)); }
+}
+
 /* ------------------------------------------------------------------- sync */
 
 async function syncAll(cfg, state, log, { pullOnly = false } = {}) {
@@ -329,6 +349,7 @@ async function syncAll(cfg, state, log, { pullOnly = false } = {}) {
       if (policy.mode !== 'cloud' || !policy.enabled) continue;
       exported.push(await exportSpace(cfg, state, space, marks, log));
     }
+    writeHeartbeat(cfg, state, log);
     await git(cfg, state, ['add', '-A']);
     const status = await git(cfg, state, ['status', '--porcelain']);
     let pushed = false;
@@ -348,6 +369,73 @@ async function syncAll(cfg, state, log, { pullOnly = false } = {}) {
 }
 
 /* ------------------------------------------------------------------ plugin */
+
+
+
+const looksLikeUrl = (value) => /^(ssh|https?):\/\//i.test(String(value || '').trim());
+function buildRemote(cfg, input) {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  if (looksLikeUrl(raw)) return raw;
+  const path = String(cfg.hubPath || '/home/mnemon/mnemon-sync.git').replace(/^\/+/, '');
+  const user = cfg.hubUser || 'mnemon';
+  return 'ssh://' + user + '@' + raw + '/' + path;
+}
+function parseHost(remote) {
+  const m = /^(?:ssh|https?):\/\/(?:[^@/]+@)?([^/:]+)/i.exec(String(remote || ''));
+  return m ? m[1] : '';
+}
+
+/* ------------------------------------------------------------------ api */
+// 极简只读/写配置接口，给插件设置页用（127.0.0.1，非 UI）
+function startStatusApi(cfg, deps) {
+  const { readState, writeState, syncAll, log } = deps;
+  const state = () => readState(cfg);
+  const server = http.createServer(async (req, res) => {
+    const cors = {
+      'access-control-allow-origin': 'http://127.0.0.1:3080',
+      'access-control-allow-methods': 'GET,POST,OPTIONS',
+      'access-control-allow-headers': 'content-type',
+      'cache-control': 'no-store',
+    };
+    const send = (code, body) => { res.writeHead(code, { ...cors, 'content-type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(body)); };
+    if (req.method === 'OPTIONS') { res.writeHead(204, cors); return res.end(); }
+    const url = new URL(req.url, 'http://127.0.0.1');
+    try {
+      if (req.method === 'GET' && url.pathname === '/kb/config') {
+        const s = state();
+        return send(200, {
+          remote: s.remote || '',
+          host: parseHost(s.remote),
+          device: s.device || deps.hostname(),
+          defaultDevice: deps.hostname(),
+          lastSync: s.lastSync || null,
+          configured: Boolean(s.remote),
+          syncing: Boolean(deps.isRunning?.()),
+        });
+      }
+      if (req.method === 'POST' && url.pathname === '/kb/config') {
+        let raw = '';
+        for await (const chunk of req) raw += chunk;
+        const body = raw ? JSON.parse(raw) : {};
+        const s = state();
+        if (typeof body.host === 'string') s.remote = buildRemote(cfg, body.host);
+        else if (typeof body.remote === 'string') s.remote = body.remote.trim();
+        if (typeof body.device === 'string') s.device = body.device.trim();
+        writeState(cfg, s);
+        const result = await syncAll(cfg, state(), log);
+        return send(200, { ok: result.ok !== false, result });
+      }
+      return send(404, { ok: false, detail: 'not found' });
+    } catch (error) {
+      log?.('warn', 'api: ' + (error?.message ?? error));
+      return send(500, { ok: false, detail: String(error?.message ?? error) });
+    }
+  });
+  server.listen(Number(cfg.apiPort) || 7394, '127.0.0.1');
+  server.unref?.();
+  return server;
+}
 
 export function apply(ctx, config = {}) {
   const log = (level, message) => {
@@ -370,6 +458,7 @@ export function apply(ctx, config = {}) {
     try { return await fn(); } catch (error) { return { ok: false, detail: String(error?.message ?? error) }; } finally { running = false; }
   }
 
+  const isRunning = () => running;
   const tool = (definition) => {
     ctx.tools.register({
       name: definition.name,
@@ -503,6 +592,11 @@ export function apply(ctx, config = {}) {
     });
   } catch (error) { log('warn', 'prompt: ' + (error?.message ?? error)); }
 
+  // 设置页用的极简配置接口（127.0.0.1，不提供 UI）
+  let apiServer;
+  try { apiServer = startStatusApi(cfg, { readState, writeState, syncAll, log, isRunning, hostname }); }
+  catch (error) { log('warn', 'api start: ' + (error?.message ?? error)); }
+
   // ── 事件驱动：写入即推；hub 一收到推送就长轮询通知各端 ──────────────
   const writeTools = new Set([
     'mnemon_remember', 'mnemon_forget', 'mnemon_link',
@@ -593,7 +687,7 @@ export function apply(ctx, config = {}) {
   } catch (error) { log('warn', 'event loop: ' + (error?.message ?? error)); }
 
   try {
-    const cleanup = () => { stopped = true; clearTimeout(pushDebounce); clearInterval(fallback); try { fileWatcher?.close(); } catch {} };
+    const cleanup = () => { stopped = true; clearTimeout(pushDebounce); clearInterval(fallback); try { apiServer?.close(); } catch {} try { fileWatcher?.close(); } catch {} };
     if (typeof ctx.effect === 'function') ctx.effect(() => cleanup, 'kb-sync notify');
   } catch { /* ignore */ }
 }
