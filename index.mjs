@@ -27,7 +27,6 @@ export const name = 'kb-sync';
 export const Config = z.object({
   remote: z.string().default('').description('共享知识库地址（ssh:// 或 https://）；留空 = 只在本机，不同步').volatile(),
   device: z.string().default('').description('本机在仓库里的分片名；留空 = 用主机名').volatile(),
-  intervalMinutes: z.number().default(0).description('兜底对账间隔（分钟）；0 = 关闭，只靠事件触发').volatile(),
   notifyUrl: z.string().default('').description('hub 通知服务地址（http://host:7392）；留空 = 不实时通知，只靠兜底').volatile(),
   notifyToken: z.string().default('').description('hub 通知服务 token').volatile(),
   spaces: z.dict(z.object({
@@ -476,17 +475,33 @@ export function apply(ctx, config = {}) {
 
   let running = false;
   let runningSince = 0;
-  // 自己同步时会打开数据库，SQLite 会摸 -wal/-shm 的 mtime；不加抑制就会自激成 3 秒一次的同步循环
-  let suppressUntil = Date.now() + 3000;
 
   async function withLock(fn) {
     if (running) return { ok: false, detail: '同步进行中，稍后再试' };
     running = true;
     runningSince = Date.now();
-    try { return await fn(); } catch (error) { return { ok: false, detail: String(error?.message ?? error) }; } finally { running = false; suppressUntil = Date.now() + 6000; }
+    try { return await fn(); } catch (error) { return { ok: false, detail: String(error?.message ?? error) }; } finally { running = false; }
   }
 
   const isRunning = () => running && Date.now() - runningSince < 120000;
+  // 敏感信息规则随插件走：任何设备装上 dsh-kb-sync 都会注入这一段
+  try {
+    ctx.inject(['systemPrompt'], (scope) => {
+      scope.get('systemPrompt').section({
+        name: 'kb-sync/sensitive-local',
+        order: 41,
+        text: [
+          '【敏感信息只进本地空间】',
+          '凡是密码、口令、token、API key、私钥、助记词、cookie/session、SSH 与面板凭据、身份证/护照/学号、手机号、住址、银行卡、简历与个人履历、他人隐私，',
+          '一律写入 mode=local 的记忆空间：凭据与密钥 → local-secrets，履历与个人资料 → h3c-career。',
+          '这两个空间永不导出、永不上传共享仓库。判据：一旦泄露能让人冒用身份、登录账号或定位到你，就必须 local。',
+          '严禁写进任何 cloud 空间；发现云端已有敏感内容，提醒用户迁移并清除历史，不要往云端补写。拿不准按 local 处理。',
+        ].join(''),
+      });
+      log('info', 'systemPrompt section registered: kb-sync/sensitive-local');
+    });
+  } catch (error) { log('warn', 'systemPrompt section failed: ' + (error?.message ?? error)); }
+
   const tool = (definition) => {
     ctx.tools.register({
       name: definition.name,
@@ -663,7 +678,6 @@ export function apply(ctx, config = {}) {
     mkdirSync(watchRoot, { recursive: true, mode: 0o700 });
     if (existsSync(watchRoot)) {
       fileWatcher = watch(watchRoot, { recursive: true }, (_event, filename) => {
-        if (Date.now() < suppressUntil) return;
         const name = String(filename ?? '');
         if (!/mnemon\.db(-wal)?$/.test(name)) return;
         if (name.endsWith('-wal')) {
@@ -693,9 +707,14 @@ export function apply(ctx, config = {}) {
         const base = notifyUrl.replace(/\/+$/, '');
         const url = base + '/wait?rev=' + encodeURIComponent(rev) + '&token=' + encodeURIComponent(state.notify?.token ?? '');
         const payload = await httpJson(url, 70000);
-        if (payload?.changed && payload?.device && payload.device === readState(cfg).device) {
-          // 自己推的提交：hub 的回声，不再同步一次
+        const eventId = String(payload?.eventId ?? '');
+        const seen = (globalThis.__kbSeenEvents ??= new Set());
+        const mine = Boolean(payload?.device) && payload.device === readState(cfg).device;
+        const duplicate = Boolean(eventId) && seen.has(eventId);
+        if (payload?.changed && (mine || duplicate)) {
+          log('info', 'notify drop: ' + (mine ? 'own tag ' : 'duplicate ') + (payload.device || '?') + ' ' + eventId.slice(0, 8));
         } else if (payload?.changed) {
+          if (eventId) { seen.add(eventId); if (seen.size > 200) seen.delete(seen.values().next().value); }
           const result = await withLock(() => syncAll(cfg, readState(cfg), log));
           if (result?.ok === false) log('warn', 'notify pull: ' + result.detail);
         }
@@ -708,12 +727,6 @@ export function apply(ctx, config = {}) {
     }
   };
 
-  // 纯事件驱动：intervalMinutes = 0 时完全没有定时器
-  const fallbackMinutes = Math.max(0, Number(cfg.intervalMinutes) || 0);
-  const fallback = fallbackMinutes > 0
-    ? setInterval(() => { withLock(() => syncAll(cfg, readState(cfg), log)).catch(() => {}); }, fallbackMinutes * 60 * 1000)
-    : undefined;
-  fallback?.unref?.();
 
   try {
     setTimeout(() => {
@@ -723,7 +736,7 @@ export function apply(ctx, config = {}) {
   } catch (error) { log('warn', 'event loop: ' + (error?.message ?? error)); }
 
   try {
-    const cleanup = () => { stopped = true; clearTimeout(pushDebounce); clearInterval(fallback); try { apiServer?.close(); } catch {} try { fileWatcher?.close(); } catch {} };
+    const cleanup = () => { stopped = true; clearTimeout(pushDebounce);  try { apiServer?.close(); } catch {} try { fileWatcher?.close(); } catch {} };
     if (typeof ctx.effect === 'function') ctx.effect(() => cleanup, 'kb-sync notify');
   } catch { /* ignore */ }
 }
