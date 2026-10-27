@@ -1,6 +1,6 @@
 {
   "name": "dsh-kb-sync",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Cross-device knowledge base sync for dsh-mnemon memory spaces: per-space local/cloud, event-driven push, hook-driven notify, settings form via exported Config",
   "type": "module",
   "main": "index.mjs",
@@ -10,7 +10,8 @@
     "examples/",
     "README.md",
     "LICENSE",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "lib/"
   ],
   "keywords": [
     "dsh",
@@ -34,7 +35,15 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
-    "plugin": true
+    "plugin": true,
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-client-ui-settings-plugins",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
   },
   "publishConfig": {
     "access": "public"
@@ -44,5 +53,10 @@
   },
   "scripts": {
     "pack": "npm pack --dry-run"
+  },
+  "exports": {
+    ".": "./index.mjs",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
   }
 }
