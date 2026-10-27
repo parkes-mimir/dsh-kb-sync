@@ -1,0 +1,35 @@
+{
+  "name": "dsh-kb-sync",
+  "version": "0.3.0",
+  "description": "Cross-device knowledge base sync for dsh-mnemon memory spaces (local/cloud per space, event-driven push, hook-driven notify)",
+  "type": "module",
+  "main": "index.mjs",
+  "files": [
+    "index.mjs",
+    "hub/",
+    "examples/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "mnemon",
+    "memory",
+    "sync",
+    "knowledge-base"
+  ],
+  "license": "MIT",
+  "author": "parkes-mimir",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/parkes-mimir/dsh-kb-sync.git"
+  },
+  "homepage": "https://github.com/parkes-mimir/dsh-kb-sync",
+  "engines": {
+    "node": ">=22"
+  },
+  "dsh": {
+    "plugin": true
+  }
+}
