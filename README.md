@@ -57,6 +57,7 @@
    /wait 返回 changed=true → git pull → 应用新条目
 ```
 
+- 写入来源两种都覆盖：dsh 工具事件（`tools/result`），以及**文件系统事件**（`fs.watch`/inotify，兜住 CLI、迁移脚本、其他进程直接写库）；
 - 设备侧只维持**一个挂起的 HTTP 请求**，不轮询磁盘、不轮询服务端；
 - 服务端只在启动时读一次 HEAD，之后完全由钩子驱动；
 - 兜底的 `intervalMinutes` 对账是可选项（默认 30 分钟，设 0 关闭），不是主链路。
