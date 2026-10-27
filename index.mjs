@@ -475,12 +475,14 @@ export function apply(ctx, config = {}) {
 
   let running = false;
   let runningSince = 0;
+  // 自己同步时会打开数据库，SQLite 会摸 -wal/-shm 的 mtime；不加抑制就会自激成 3 秒一次的同步循环
+  let suppressUntil = Date.now() + 3000;
 
   async function withLock(fn) {
     if (running) return { ok: false, detail: '同步进行中，稍后再试' };
     running = true;
     runningSince = Date.now();
-    try { return await fn(); } catch (error) { return { ok: false, detail: String(error?.message ?? error) }; } finally { running = false; }
+    try { return await fn(); } catch (error) { return { ok: false, detail: String(error?.message ?? error) }; } finally { running = false; suppressUntil = Date.now() + 6000; }
   }
 
   const isRunning = () => running && Date.now() - runningSince < 120000;
@@ -660,8 +662,12 @@ export function apply(ctx, config = {}) {
     mkdirSync(watchRoot, { recursive: true, mode: 0o700 });
     if (existsSync(watchRoot)) {
       fileWatcher = watch(watchRoot, { recursive: true }, (_event, filename) => {
+        if (Date.now() < suppressUntil) return;
         const name = String(filename ?? '');
         if (!/mnemon\.db(-wal)?$/.test(name)) return;
+        if (name.endsWith('-wal')) {
+          try { if (statSync(join(watchRoot, name)).size === 0) return; } catch { return; }
+        }
         const space = name.split('/')[0];
         if (!space) return;
         const state = readState(cfg);
