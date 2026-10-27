@@ -49,7 +49,7 @@ const DEFAULTS = {
   promptOrder: 151,
   notifyUrl: '',
   notifyToken: '',
-  gitTimeoutMs: 180000,
+  gitTimeoutMs: 60000,
 };
 
 const sh = (bin, args, opts = {}) => new Promise((resolve) => {
@@ -199,8 +199,14 @@ function repoSpaceMeta(repoDir, space) {
 
 /* ------------------------------------------------------------- git helpers */
 
+const GIT_ENV = {
+  ...process.env,
+  GIT_TERMINAL_PROMPT: '0',
+  GCM_INTERACTIVE: 'never',
+  GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o ConnectTimeout=8 -o ServerAliveInterval=5 -o ServerAliveCountMax=2',
+};
 async function git(cfg, state, args, opts = {}) {
-  return sh('git', ['-C', state.repoDir, ...args], { timeoutMs: cfg.gitTimeoutMs, ...opts });
+  return sh('git', ['-C', state.repoDir, ...args], { timeoutMs: cfg.gitTimeoutMs, env: GIT_ENV, ...opts });
 }
 
 async function ensureRepo(cfg, state, log) {
@@ -468,14 +474,16 @@ export function apply(ctx, config = {}) {
   console.error('[kb-sync] plugin loaded, dataDir=' + cfg.dataDir);
 
   let running = false;
+  let runningSince = 0;
 
   async function withLock(fn) {
     if (running) return { ok: false, detail: '同步进行中，稍后再试' };
     running = true;
+    runningSince = Date.now();
     try { return await fn(); } catch (error) { return { ok: false, detail: String(error?.message ?? error) }; } finally { running = false; }
   }
 
-  const isRunning = () => running;
+  const isRunning = () => running && Date.now() - runningSince < 120000;
   const tool = (definition) => {
     ctx.tools.register({
       name: definition.name,
