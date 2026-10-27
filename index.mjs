@@ -303,12 +303,12 @@ async function exportSpace(cfg, state, space, marks, log) {
 
 
 /** 每次同步后写 devices/<device>.json，供 hub 面板统计设备与最近同步。 */
-function writeHeartbeat(cfg, state, log) {
+function writeHeartbeat(cfg, state, log, explicitHead) {
   try {
     const dir = join(state.repoDir, 'devices');
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     let head = '';
-    try { head = execFileSync('git', ['-C', state.repoDir, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch {}
+    try { head = explicitHead ?? execFileSync('git', ['-C', state.repoDir, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch {}
     const body = {
       device: state.device,
       host: hostname(),
@@ -362,6 +362,14 @@ async function syncAll(cfg, state, log, { pullOnly = false } = {}) {
       const staged = await git(cfg, state, ['status', '--porcelain']);
       if (staged.ok && staged.stdout.trim()) {
         await git(cfg, state, ['commit', '-m', 'kb-sync: ' + state.device + ' @ ' + nowIso()]);
+        // 心跳里的 head 要指向它自己这次提交，否则永远比 hub 落后一格 → 面板永远显示未同步
+        try {
+          const headNow = await git(cfg, state, ['rev-parse', '--short', 'HEAD']);
+          if (headNow.ok && headNow.stdout.trim()) {
+            writeHeartbeat(cfg, state, log, headNow.stdout.trim());
+            await git(cfg, state, ['commit', '--amend', '--no-edit', '-a']);
+          }
+        } catch { /* 非致命 */ }
         const push = await git(cfg, state, ['push', '-u', 'origin', 'HEAD']);
         pushed = push.ok;
         if (!push.ok) log?.('warn', 'push failed: ' + push.stderr.slice(0, 200));
