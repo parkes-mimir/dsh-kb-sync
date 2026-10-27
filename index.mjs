@@ -10,10 +10,11 @@
 //   · 写入落库后 ~30s 内自动推送（mtime 侦测 + 去抖），并定期全量同步一次。
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, watch, writeFileSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
 import { basename, join } from 'node:path';
 import { createRequire } from 'node:module';
+import { startUi } from './ui.mjs';
 import http from 'node:http';
 
 const require = createRequire(import.meta.url);
@@ -33,6 +34,9 @@ const DEFAULTS = {
   promptOrder: 151,
   notifyUrl: '',
   notifyToken: '',
+  uiEnabled: true,
+  uiHost: '127.0.0.1',
+  uiPort: 7393,
   gitTimeoutMs: 180000,
 };
 
@@ -517,6 +521,27 @@ export function apply(ctx, config = {}) {
     });
   } catch (error) { log('warn', 'write hook: ' + (error?.message ?? error)); }
 
+  // 文件系统事件（不是轮询）：容器内任何进程写 mnemon.db / -wal（CLI、别的插件、迁移脚本）
+  // 都当成一次"写入"，去抖后推送。recursive watch 由 inotify 驱动，空闲时零开销。
+  let fileWatcher;
+  try {
+    const watchRoot = join(cfg.dataDir, 'data');
+    mkdirSync(watchRoot, { recursive: true, mode: 0o700 });
+    if (existsSync(watchRoot)) {
+      fileWatcher = watch(watchRoot, { recursive: true }, (_event, filename) => {
+        const name = String(filename ?? '');
+        if (!/mnemon\.db(-wal)?$/.test(name)) return;
+        const space = name.split('/')[0];
+        if (!space) return;
+        const state = readState(cfg);
+        const policy = spacePolicy(state, space);
+        if (policy.mode !== 'cloud' || !policy.enabled) return;
+        schedulePush(1.5);
+      });
+      fileWatcher.unref?.();
+    }
+  } catch (error) { log('warn', 'fs watch: ' + (error?.message ?? error)); }
+
   let stopped = false;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const notifyLoop = async () => {
@@ -555,8 +580,18 @@ export function apply(ctx, config = {}) {
     notifyLoop().catch((error) => log('warn', 'notify loop died: ' + (error?.message ?? error)));
   } catch (error) { log('warn', 'event loop: ' + (error?.message ?? error)); }
 
+  // 本地可视化面板（127.0.0.1，可关）
+  let uiServer;
+  if (cfg.uiEnabled !== false) {
+    try {
+      uiServer = startUi({
+        cfg, readState, writeState, spacePolicy, listLocalSpaces, readLocalInsights, repoMarks, syncAll, log,
+      });
+    } catch (error) { log('warn', 'ui start: ' + (error?.message ?? error)); }
+  }
+
   try {
-    const cleanup = () => { stopped = true; clearTimeout(pushDebounce); clearInterval(fallback); };
+    const cleanup = () => { stopped = true; clearTimeout(pushDebounce); clearInterval(fallback); try { fileWatcher?.close(); } catch {} try { uiServer?.close(); } catch {} };
     if (typeof ctx.effect === 'function') ctx.effect(() => cleanup, 'kb-sync notify');
   } catch { /* ignore */ }
 }
