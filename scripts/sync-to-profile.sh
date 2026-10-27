@@ -5,7 +5,7 @@ set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DST="${1:-$HOME/.dsh/plugins/dsh-kb-sync}"
 [ -d "$DST" ] || { echo "目标不存在：$DST" >&2; exit 1; }
-for f in index.mjs package.json cordis.patch.yml README.md LICENSE; do
+for f in index.mjs package.json cordis.patch.yml README.md LICENSE lib/client.js; do
   [ -f "$SRC/$f" ] && install -m 644 "$SRC/$f" "$DST/$f" && echo "synced $f"
 done
 mkdir -p "$DST/node_modules/@deepseek-ai"
