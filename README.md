@@ -216,6 +216,20 @@ const scope = ctx.configForms.get('dsh-kb-sync')   // getSnapshot()/subscribe()/
 # 然后重启 dsh
 ```
 
+## Hub 面板（给所有设备看）
+
+hub 上的 kb-notify 多了一个只读面板：
+
+```text
+http://<HUB_IP>:7392/?token=<HUB_TOKEN>
+```
+
+- 每个知识库：最新同步者（设备名）、同步时间、分片设备数、条目数
+- 设备卡片：设备名、主机、插件版本、上次同步、HEAD，1 小时内算「在线」
+- `GET /api/overview?token=…` 返回同数据的 JSON，方便脚本取
+
+数据来源：git 树（`spaces/<空间>/<设备>.jsonl` 与 `devices/<设备>.json` 心跳），不额外维护数据库。
+
 ## 自检：插件在不在跑、同步没同步
 
 一条命令：
