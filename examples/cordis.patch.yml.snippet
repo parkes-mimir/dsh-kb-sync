@@ -1,0 +1,8 @@
+# 放进 ~/.dsh/profiles/<profile>/cordis.patch.yml
+# 注意：新插件必须放在 insert: 下面；写成顶层 - id: 只会被当成修改已有行
+- insert:
+    - id: kb-sync
+      name: dsh-kb-sync
+      config:
+        intervalMinutes: 30        # 兜底对账，0 = 关闭
+        device: my-laptop          # 本机在仓库里的分片名
