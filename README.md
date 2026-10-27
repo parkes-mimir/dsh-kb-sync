@@ -172,6 +172,54 @@ sudo ./hub/install-hub.sh /home/mnemon/mnemon-sync.git
 
 ---
 
+## 自检：插件在不在跑、同步没同步
+
+一条命令：
+
+```bash
+ln -sf "$PWD/scripts/kb-status.mjs" ~/.local/bin/kb-status   # 首次
+kb-status
+```
+
+输出长这样（全绿就是同步好了）：
+
+```text
+== 插件
+  已加载  [kb-sync] plugin loaded, dataDir=/home/mimir/.mnemon
+== 配置
+  remote    ssh://mnemon@host/home/mnemon/mnemon-sync.git
+  device    nixos
+  repoDir   /home/mimir/.mnemon/state/kb-repo ✓
+  lastSync  2026-10-27T09:22:32.710Z
+== 仓库
+  HEAD      a48889c  2026-10-27T17:06:11 kb-sync: drop acceptance test spaces
+== 空间
+  space          mode en local remote missing
+  dsh-env        cloud on     41     41       0
+  tt5g-kernel    cloud on    267    267       0
+== 通知链路
+  hub rev 一致 a48889c4
+== 结论
+  插件在跑，配置齐全；空间表的 missing 全为 0 即已同步
+```
+
+看四个地方就够：
+
+| 看什么 | 正常 | 不对时 |
+|---|---|---|
+| `== 插件` | 有 `[kb-sync] plugin loaded` | 插件没挂上：查 `dsh plugin --profile web list`、重启 dsh |
+| `== 仓库 HEAD` | 有提交，时间是最近的 | 空仓库：`remote` 没配或 clone 失败 |
+| `== 空间 missing` | 全是 `0` | 有数字 = 对端有新条目还没拉到，`kb_sync` 或等通知 |
+| `== 通知链路` | `rev 一致` | `≠` = 本地没推上去；`不可达` = hub 服务挂了 |
+
+手工三连（不想装脚本时）：
+
+```bash
+journalctl --user -u dsh-web.service --since '-30min' | grep kb-sync   # 加载/告警
+ss -tn | grep 7392                                                    # 通知长连接是否挂着
+git -C ~/.mnemon/state/kb-repo log --oneline -3                       # 最近的自动推送
+```
+
 ## 已知限制
 
 - 写入到推送约 1–2 秒（去抖）；跨设备到可见取决于对端 `/wait` 的连接状态，通常 1–3 秒。
