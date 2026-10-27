@@ -31,5 +31,14 @@
   },
   "dsh": {
     "plugin": true
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bugs": {
+    "url": "https://github.com/parkes-mimir/dsh-kb-sync/issues"
+  },
+  "scripts": {
+    "pack": "npm pack --dry-run"
   }
 }
