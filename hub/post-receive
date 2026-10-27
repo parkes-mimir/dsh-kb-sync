@@ -1,9 +1,10 @@
 #!/bin/sh
 # post-receive —— 推送落地即触发通知（git 自己调用，不是轮询）
-# 把新 HEAD 交给 kb-notify 服务，服务唤醒所有挂起中的 /wait。
+# 附带推送者设备名，客户端据此忽略自己触发的回声
 TOKEN=$(cat /etc/kb-notify.token 2>/dev/null)
 REV=$(git rev-parse HEAD)
+DEV=$(git log -1 --format=%s | sed -n 's/^kb-sync: \(.*\) @ .*/\1/p')
 [ -z "$TOKEN" ] && exit 0
 curl -s -m 3 -H "X-KB-Token: $TOKEN" -H "Content-Type: application/json" \
-     -X POST --data "{\"rev\":\"$REV\"}" \
+     -X POST --data "{\"rev\":\"$REV\",\"device\":\"$DEV\"}" \
      "http://127.0.0.1:7392/publish" >/dev/null 2>&1 || true
