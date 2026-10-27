@@ -1,7 +1,7 @@
 {
   "name": "dsh-kb-sync",
-  "version": "0.4.0",
-  "description": "Cross-device knowledge base sync for dsh-mnemon memory spaces: per-space local/cloud, event-driven push, hook-driven notify, built-in visual panel",
+  "version": "0.4.1",
+  "description": "Cross-device knowledge base sync for dsh-mnemon memory spaces: per-space local/cloud, event-driven push, hook-driven notify (config-only, no custom panel)",
   "type": "module",
   "main": "index.mjs",
   "files": [
@@ -10,8 +10,7 @@
     "examples/",
     "README.md",
     "LICENSE",
-    "cordis.patch.yml",
-    "ui.mjs"
+    "cordis.patch.yml"
   ],
   "keywords": [
     "dsh",
