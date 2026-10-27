@@ -7,6 +7,27 @@
 
 ---
 
+## 前置依赖与许可证
+
+本插件**不包含也不重分发任何上游代码**，只通过公开接口调用它们。
+
+| 依赖 | 作用 | 许可证 | 链接 | 验证版本 |
+|---|---|---|---|---|
+| **DeepSeek Harness**（`@deepseek-ai/dsh-*`） | 宿主运行时；本插件注册工具、监听 `tools/result` 事件 | **MIT** | [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) | 0.2.1-alpha.2 |
+| **dsh-mnemon** | 提供 Memory Space（记忆空间）的读写与注册表 | **MIT**（© 2026 dsh-external contributors） | [omdsh-dev/dsh-mnemon](https://github.com/omdsh-dev/dsh-mnemon) | 0.5.28 |
+| **Mnemon Native**（`@mnemon-dev/mnemon`） | 本地记忆库；插件通过 `mnemon` CLI 做 `store create` / `import` / `forget` | **Apache-2.0** | [mnemon-dev/mnemon](https://github.com/mnemon-dev/mnemon) | 0.2.10 |
+| **git** | 传输层（push / pull / hook） | **GPL-2.0** | [git-scm.com](https://git-scm.com/) | 2.47+（hub）/ 2.55（本机） |
+| **Node.js** | 运行时；读 SQLite 用内置 `node:sqlite` | **MIT** | [nodejs.org](https://nodejs.org/) | ≥ 22（本机 24.20） |
+
+许可兼容性说明：
+
+- 本插件用 **MIT**。MIT 与 MIT/Apache-2.0 都是宽松许可，组合分发无需开源本插件之外的代码；
+- Apache-2.0 的 mnemon 只以**独立进程**（CLI）被调用，不产生衍生作品，也不要求本仓库附带其 NOTICE；
+- git 是 GPL-2.0，但同样只是被 `child_process` 当外部程序执行，不链接、不随本仓库分发；
+- 仓库里唯一的第三方文本是 README 中的链接与版本号，没有拷贝任何上游源码或文档正文。
+
+---
+
 ## 它解决什么
 
 默认的 mnemon 记忆是**单机**的：每台机器各记各的，同一件事要在不同设备上重复总结。
