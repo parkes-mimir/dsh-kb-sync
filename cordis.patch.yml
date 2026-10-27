@@ -8,7 +8,9 @@
         device: ''
         notifyUrl: ''
         notifyToken: ''
-        # 默认哪些空间只留本机：h3c-career 含个人资料与简历，永不上云
+        # 敏感信息只留本机：随包默认，任何设备装上都是 local
         spaces:
           h3c-career:
+            mode: local
+          local-secrets:
             mode: local
