@@ -55,13 +55,15 @@ h1{font-size:18px;margin:0 0 4px}.sub{color:#8b93a1;font-size:12px;margin-bottom
 .card{background:#171a21;border:1px solid #262b36;border-radius:10px;padding:14px 16px;margin-bottom:14px}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid #22262f;font-size:13px}
 th{color:#8b93a1;font-weight:500}.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px}
-.on{background:#12301c;color:#3fb950}.stale{background:#3a2a12;color:#ffc46b}.muted{color:#6b7280}
+.on{background:#12301c;color:#3fb950}.stale{background:#3a2a12;color:#ffc46b}.behind{background:#3a1212;color:#ff6b6b}.muted{color:#6b7280}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
 .dev{background:#12151b;border:1px solid #232833;border-radius:8px;padding:10px 12px}
 .dev b{font-size:13px}.dev div{font-size:11px;color:#8b93a1}
 </style></head><body>
 <h1>记忆网络</h1><div class="sub" id="sub">加载中…</div>
-<div class="card"><div style="font-size:12px;color:#8b93a1;margin-bottom:8px">知识库同步状态</div>
+<div class="card"><div style="font-size:12px;color:#8b93a1;margin-bottom:8px">每个知识库 · 各设备最近同步（绿=1小时内已同步，红=落后于该库最新提交，黄=较久，灰=该设备没有这个库）</div>
+<div style="overflow-x:auto"><table><thead id="matrix-head"></thead><tbody id="matrix"></tbody></table></div></div>
+<div class="card"><div style="font-size:12px;color:#8b93a1;margin-bottom:8px">知识库概况</div>
 <table><thead><tr><th>知识库</th><th>最新同步者</th><th>同步时间</th><th>分片设备</th><th>条数</th></tr></thead><tbody id="spaces"></tbody></table></div>
 <div class="card"><div style="font-size:12px;color:#8b93a1;margin-bottom:8px">设备</div><div class="grid" id="devices"></div></div>
 <script>
@@ -72,8 +74,22 @@ async function load(){
   if(!r.ok){ document.getElementById('sub').textContent = '鉴权失败：请用 ?token=… 打开'; return; }
   const d = await r.json();
   document.getElementById('sub').textContent = 'HEAD ' + d.head + ' · 设备 ' + d.devices.length + ' 台 · 空间 ' + d.spaces.length + ' 个 · ' + new Date().toLocaleTimeString();
+  const devs = (d.devices||[]).map(x => x.device);
+  document.getElementById('matrix-head').innerHTML = '<tr><th>知识库</th>' + devs.map(x => '<th>' + x + '</th>').join('') + '</tr>';
+  document.getElementById('matrix').innerHTML = d.spaces.map(s => {
+    const cells = devs.map(dev => {
+      const t = (s.perDevice||{})[dev];
+      if (!t) return '<td><span class="pill muted">无</span></td>';
+      const age = Date.now() - new Date(t).getTime();
+      const behind = s.lastSync && new Date(t).getTime() < new Date(s.lastSync).getTime() - 60e3;
+      const cls = behind ? 'behind' : (age < 3600e3 ? 'on' : 'stale');
+      const label = behind ? '落后 ' + ago(s.lastSync) : ago(t);
+      return '<td><span class="pill ' + cls + '" title="' + new Date(t).toLocaleString() + '">' + label + '</span></td>';
+    }).join('');
+    return '<tr><td>' + s.space + '</td>' + cells + '</tr>';
+  }).join('');
   document.getElementById('spaces').innerHTML = d.spaces.map(s => '<tr><td>' + s.space + '</td><td>' + (s.lastDevice||'—') + '</td><td>' + (s.lastSync? new Date(s.lastSync).toLocaleString():'—') + ' <span class="muted">'+ago(s.lastSync)+'</span></td><td>' + s.devices + '</td><td>' + s.records + '</td></tr>').join('');
-  document.getElementById('devices').innerHTML = d.devices.map(x => '<div class="dev"><b>' + x.device + '</b> <span class="pill ' + (x.fresh?'on':'stale') + '">' + (x.fresh?'在线':'离线') + '</span><div>' + (x.host||'') + ' · ' + (x.version||'') + '</div><div>上次同步：' + (x.lastSync? new Date(x.lastSync).toLocaleString():'—') + '（'+ago(x.lastSync)+'）</div><div>HEAD ' + (x.head||'—') + '</div></div>').join('');
+  document.getElementById('devices').innerHTML = d.devices.map(x => '<div class="dev"><b>' + x.device + '</b> <span class="pill ' + (x.fresh?'on':'stale') + '">' + (x.fresh?'在线':'离线') + '</span><div>' + (x.host||'') + ' · ' + (x.version||'') + '</div><div>最近同步（任一库）：' + (x.lastSync? new Date(x.lastSync).toLocaleString():'—') + '（'+ago(x.lastSync)+'）</div><div>HEAD ' + (x.head||'—') + '</div></div>').join('');
 }
 load(); setInterval(load, 15000);
 </script></body></html>"""
@@ -141,9 +157,12 @@ def overview():
                     device = base[:-6]
                     break
         records = 0
+        per_device = {}
         for shard in shards:
             records += sum(1 for line in show_file("spaces/" + name + "/" + shard).splitlines() if line.strip())
-        spaces.append({"space": name, "lastDevice": device, "lastSync": last_sync, "devices": len(shards), "records": records})
+            dev = shard[:-6]
+            per_device[dev] = git_out(["log", "-1", "--format=%cI", "--", "spaces/" + name + "/" + shard])
+        spaces.append({"space": name, "lastDevice": device, "lastSync": last_sync, "devices": len(shards), "records": records, "perDevice": per_device})
     return {"repo": os.path.basename(ARGS.repo), "head": head, "devices": devices, "spaces": spaces}
 
 
