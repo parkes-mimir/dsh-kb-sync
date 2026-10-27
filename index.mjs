@@ -349,15 +349,24 @@ async function syncAll(cfg, state, log, { pullOnly = false } = {}) {
       if (policy.mode !== 'cloud' || !policy.enabled) continue;
       exported.push(await exportSpace(cfg, state, space, marks, log));
     }
-    writeHeartbeat(cfg, state, log);
     await git(cfg, state, ['add', '-A']);
     const status = await git(cfg, state, ['status', '--porcelain']);
+    const changed = Boolean(status.ok && status.stdout.trim());
+    // 心跳最多每 30 分钟刷一次，避免「只改时间戳」的提交把通知链打成死循环
+    const lastBeat = state.lastHeartbeatAt ? Date.parse(state.lastHeartbeatAt) : 0;
+    const beatDue = !lastBeat || Date.now() - lastBeat > 30 * 60 * 1000;
     let pushed = false;
-    if (status.ok && status.stdout.trim()) {
-      await git(cfg, state, ['commit', '-m', 'kb-sync: ' + state.device + ' @ ' + nowIso()]);
-      const push = await git(cfg, state, ['push', '-u', 'origin', 'HEAD']);
-      pushed = push.ok;
-      if (!push.ok) log?.('warn', 'push failed: ' + push.stderr.slice(0, 200));
+    if (changed || beatDue) {
+      writeHeartbeat(cfg, state, log);
+      await git(cfg, state, ['add', '-A']);
+      const staged = await git(cfg, state, ['status', '--porcelain']);
+      if (staged.ok && staged.stdout.trim()) {
+        await git(cfg, state, ['commit', '-m', 'kb-sync: ' + state.device + ' @ ' + nowIso()]);
+        const push = await git(cfg, state, ['push', '-u', 'origin', 'HEAD']);
+        pushed = push.ok;
+        if (!push.ok) log?.('warn', 'push failed: ' + push.stderr.slice(0, 200));
+      }
+      state.lastHeartbeatAt = nowIso();
     }
     state.lastSync = nowIso();
     writeState(cfg, state);
