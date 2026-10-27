@@ -27,7 +27,7 @@ export const name = 'kb-sync';
 export const Config = z.object({
   remote: z.string().default('').description('共享知识库地址（ssh:// 或 https://）；留空 = 只在本机，不同步').volatile(),
   device: z.string().default('').description('本机在仓库里的分片名；留空 = 用主机名').volatile(),
-  intervalMinutes: z.number().default(30).description('兜底对账间隔（分钟）；0 = 关闭，只靠事件触发').volatile(),
+  intervalMinutes: z.number().default(0).description('兜底对账间隔（分钟）；0 = 关闭，只靠事件触发').volatile(),
   notifyUrl: z.string().default('').description('hub 通知服务地址（http://host:7392）；留空 = 不实时通知，只靠兜底').volatile(),
   notifyToken: z.string().default('').description('hub 通知服务 token').volatile(),
   spaces: z.dict(z.object({
@@ -42,7 +42,7 @@ const DEFAULTS = {
   remote: '',
   branch: 'main',
   device: hostname(),
-  intervalMinutes: 20,
+  intervalMinutes: 0,
   watchSeconds: 30,
   debounceSeconds: 5,
   mnemonBin: process.env.KB_MNEMON_BIN || '',
@@ -95,7 +95,7 @@ function readState(cfg) {
     branch: typeof raw.branch === 'string' ? raw.branch : cfg.branch,
     device: typeof raw.device === 'string' ? raw.device : cfg.device,
     repoDir: typeof raw.repoDir === 'string' ? raw.repoDir : join(cfg.dataDir, 'state', 'kb-repo'),
-    intervalMinutes: Number.isFinite(raw.intervalMinutes) ? raw.intervalMinutes : (Number(cfg.intervalMinutes) || 30),
+    intervalMinutes: Number.isFinite(raw.intervalMinutes) ? raw.intervalMinutes : (Number(cfg.intervalMinutes) || 0),
     spaces: raw.spaces && Object.keys(raw.spaces).length > 0 ? raw.spaces : (cfg.spaces && typeof cfg.spaces === 'object' ? cfg.spaces : {}),
     notify: raw.notify && typeof raw.notify === 'object'
       ? { url: String(raw.notify.url ?? cfg.notifyUrl ?? ''), token: String(raw.notify.token ?? cfg.notifyToken ?? '') }
@@ -693,7 +693,9 @@ export function apply(ctx, config = {}) {
         const base = notifyUrl.replace(/\/+$/, '');
         const url = base + '/wait?rev=' + encodeURIComponent(rev) + '&token=' + encodeURIComponent(state.notify?.token ?? '');
         const payload = await httpJson(url, 70000);
-        if (payload?.changed) {
+        if (payload?.changed && payload?.device && payload.device === readState(cfg).device) {
+          // 自己推的提交：hub 的回声，不再同步一次
+        } else if (payload?.changed) {
           const result = await withLock(() => syncAll(cfg, readState(cfg), log));
           if (result?.ok === false) log('warn', 'notify pull: ' + result.detail);
         }
@@ -706,10 +708,12 @@ export function apply(ctx, config = {}) {
     }
   };
 
-  const fallback = setInterval(() => {
-    withLock(() => syncAll(cfg, readState(cfg), log)).catch(() => {});
-  }, Math.max(5, Number(cfg.intervalMinutes)) * 60 * 1000);
-  fallback.unref?.();
+  // 纯事件驱动：intervalMinutes = 0 时完全没有定时器
+  const fallbackMinutes = Math.max(0, Number(cfg.intervalMinutes) || 0);
+  const fallback = fallbackMinutes > 0
+    ? setInterval(() => { withLock(() => syncAll(cfg, readState(cfg), log)).catch(() => {}); }, fallbackMinutes * 60 * 1000)
+    : undefined;
+  fallback?.unref?.();
 
   try {
     setTimeout(() => {
